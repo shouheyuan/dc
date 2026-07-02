@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepClick 回流落地页</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --ink: #172033;
+            --muted: #687386;
+            --paper: #ffffff;
+            --line: #dfe5ee;
+            --blue: #0866ff;
+            --green: #0f9d58;
+            --amber: #f5a623;
+            --coral: #ff6b57;
+            --bg: #edf2f7;
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(circle at 18% 12%, rgba(8, 102, 255, 0.12), transparent 28%),
+                radial-gradient(circle at 82% 14%, rgba(15, 157, 88, 0.13), transparent 28%),
+                var(--bg);
+            color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        .shell {
+            width: min(430px, 100vw);
+            min-height: 100vh;
+            background: #f7f9fc;
+            overflow: hidden;
+        }
+
+        @media (min-width: 540px) {
+            body {
+                padding: 24px;
+            }
+
+            .shell {
+                min-height: 860px;
+                max-height: 860px;
+                border: 10px solid #141924;
+                border-radius: 34px;
+                box-shadow: 0 30px 80px rgba(22, 32, 51, 0.28);
+            }
+        }
+
+        .status-bar {
+            height: 30px;
+            padding: 8px 18px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--paper);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .status-icons {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .signal,
+        .wifi,
+        .battery {
+            display: block;
+            height: 9px;
+            border: 1.5px solid #101828;
+        }
+
+        .signal {
+            width: 12px;
+            border-top: 0;
+            border-left: 0;
+            transform: skew(-12deg);
+        }
+
+        .wifi {
+            width: 13px;
+            height: 8px;
+            border-left: 0;
+            border-right: 0;
+            border-bottom: 0;
+            border-radius: 10px 10px 0 0;
+        }
+
+        .battery {
+            width: 18px;
+            position: relative;
+            border-radius: 3px;
+        }
+
+        .battery::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            right: -4px;
+            width: 2px;
+            height: 3px;
+            border-radius: 0 2px 2px 0;
+            background: #101828;
+        }
+
+        .page {
+            display: none;
+            min-height: calc(100vh - 30px);
+            padding: 18px;
+        }
+
+        @media (min-width: 540px) {
+            .page {
+                min-height: 830px;
+            }
+        }
+
+        .page.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+            font-weight: 900;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            background: linear-gradient(145deg, var(--blue), #14b8a6);
+            font-size: 18px;
+        }
+
+        .tag {
+            min-height: 30px;
+            padding: 6px 10px;
+            border: 1px solid var(--line);
+            border-radius: 15px;
+            color: var(--muted);
+            background: var(--paper);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .hero {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 22px;
+            padding: 18px 0 28px;
+        }
+
+        .product-scene {
+            min-height: 270px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+            background:
+                linear-gradient(145deg, rgba(8, 102, 255, 0.92), rgba(20, 184, 166, 0.9)),
+                #152033;
+            box-shadow: 0 18px 42px rgba(22, 32, 51, 0.16);
+        }
+
+        .store-card {
+            position: absolute;
+            left: 22px;
+            right: 22px;
+            bottom: 22px;
+            padding: 16px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 18px 42px rgba(20, 29, 45, 0.26);
+        }
+
+        .store-head {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .app-icon {
+            width: 58px;
+            height: 58px;
+            border-radius: 15px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+            padding: 8px;
+            background: #101828;
+        }
+
+        .app-icon i {
+            border-radius: 6px;
+            background: var(--amber);
+        }
+
+        .app-icon i:nth-child(2) {
+            background: var(--coral);
+        }
+
+        .app-icon i:nth-child(3) {
+            background: #7ed957;
+        }
+
+        .app-icon i:nth-child(4) {
+            background: var(--blue);
+        }
+
+        .store-title {
+            min-width: 0;
+        }
+
+        .store-title strong {
+            display: block;
+            font-size: 17px;
+            line-height: 1.2;
+        }
+
+        .store-title span {
+            display: block;
+            margin-top: 4px;
+            color: var(--green);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .mini-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 16px;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .mini-stats strong {
+            display: block;
+            color: var(--ink);
+            font-size: 14px;
+        }
+
+        .spark {
+            position: absolute;
+            width: 114px;
+            height: 114px;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.16);
+            transform: rotate(18deg);
+        }
+
+        .spark.one {
+            top: 34px;
+            left: 28px;
+        }
+
+        .spark.two {
+            top: 54px;
+            right: -28px;
+            background: rgba(255, 255, 255, 0.22);
+        }
+
+        .copy h1 {
+            margin: 0;
+            max-width: 9em;
+            font-size: 40px;
+            line-height: 1.05;
+            letter-spacing: 0;
+        }
+
+        .copy p {
+            margin: 14px 0 0;
+            color: #526071;
+            font-size: 16px;
+            line-height: 1.55;
+        }
+
+        .action-row {
+            display: grid;
+            gap: 10px;
+        }
+
+        .primary-btn,
+        .ghost-btn {
+            min-height: 50px;
+            border: 0;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 900;
+        }
+
+        .primary-btn {
+            color: #fff;
+            background: var(--blue);
+            box-shadow: 0 12px 28px rgba(8, 102, 255, 0.24);
+        }
+
+        .ghost-btn {
+            color: var(--ink);
+            background: #e9edf4;
+        }
+
+        .meta-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .dots {
+            display: flex;
+            gap: 5px;
+        }
+
+        .dots i {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--line);
+        }
+
+        .dots i:first-child {
+            width: 24px;
+            border-radius: 8px;
+            background: var(--blue);
+        }
+
+        .return-page {
+            background: #f8fafc;
+        }
+
+        .return-nav {
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .browser-controls {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 20px 0 0 #f59e0b, 40px 0 0 #ef4444;
+        }
+
+        .url-bar {
+            flex: 1;
+            min-width: 0;
+            margin-left: 40px;
+            padding: 9px 12px;
+            border-radius: 18px;
+            color: #dbe5f4;
+            background: #172033;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .return-card {
+            margin-top: 26px;
+            padding: 22px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--paper);
+            box-shadow: 0 18px 40px rgba(23, 32, 51, 0.09);
+        }
+
+        .return-chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            padding: 0 10px;
+            border-radius: 15px;
+            color: #075985;
+            background: #e0f2fe;
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .return-card h1 {
+            margin: 18px 0 10px;
+            font-size: 32px;
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .return-card p {
+            margin: 0;
+            color: #526071;
+            font-size: 15px;
+            line-height: 1.55;
+        }
+
+        .coupon {
+            margin: 20px 0;
+            padding: 14px;
+            border: 1px dashed #fb923c;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+            background: #fff7ed;
+        }
+
+        .coupon strong {
+            display: block;
+            color: #9a3412;
+            font-size: 17px;
+        }
+
+        .coupon span {
+            display: block;
+            margin-top: 4px;
+            color: #9a3412;
+            font-size: 12px;
+        }
+
+        .coupon-code {
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #fff;
+            color: #111827;
+            font-size: 13px;
+            font-weight: 900;
+        }
+
+        .return-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .return-actions .primary-btn {
+            background: #172033;
+            box-shadow: none;
+        }
+
+        .offer-list {
+            display: grid;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .offer-row {
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            background: var(--paper);
+        }
+
+        .offer-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            background: linear-gradient(145deg, var(--coral), var(--amber));
+            font-weight: 900;
+        }
+
+        .offer-row strong {
+            display: block;
+            font-size: 14px;
+        }
+
+        .offer-row span {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 28px;
+            z-index: 10;
+            width: min(360px, calc(100vw - 40px));
+            padding: 12px 14px;
+            border-radius: 8px;
+            color: #fff;
+            background: rgba(23, 32, 51, 0.94);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+            transform: translate(-50%, 130%);
+            opacity: 0;
+            transition: transform 0.22s ease, opacity 0.22s ease;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+    </style>
+</head>
+<body>
+    <main class="shell" aria-live="polite">
+        <div class="status-bar">
+            <span>9:41</span>
+            <span class="status-icons">
+                <i class="signal"></i>
+                <i class="wifi"></i>
+                <i class="battery"></i>
+            </span>
+        </div>
+
+        <section id="landing-page" class="page active" aria-label="广告落地页">
+            <header class="topbar">
+                <div class="brand">
+                    <span class="brand-mark">D</span>
+                    <span>DeepClick</span>
+                </div>
+                <span class="tag">Meta Ad</span>
+            </header>
+
+            <section class="hero">
+                <div class="product-scene" aria-hidden="true">
+                    <div class="spark one"></div>
+                    <div class="spark two"></div>
+                    <div class="store-card">
+                        <div class="store-head">
+                            <div class="app-icon">
+                                <i></i><i></i><i></i><i></i>
+                            </div>
+                            <div class="store-title">
+                                <strong>Nova Sort: Cash Puzzle</strong>
+                                <span>App Store</span>
+                            </div>
+                        </div>
+                        <div class="mini-stats">
+                            <span><strong>4.8 ★</strong>Rating</span>
+                            <span><strong>10M+</strong>Downloads</span>
+                            <span><strong>Free</strong>Install</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="copy">
+                    <h1>Unlock your starter reward</h1>
+                    <p>Claim the campaign offer, install from the App Store, then return to a page tailored for this click.</p>
+                </div>
+
+                <div class="action-row">
+                    <button id="play-button" class="primary-btn" type="button">Get it on the App Store</button>
+                </div>
+
+                <div class="meta-strip">
+                    <span>Sponsored placement</span>
+                    <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                </div>
+            </section>
+        </section>
+
+        <section id="return-page" class="page return-page" aria-label="回流页面">
+            <header class="return-nav">
+                <div class="browser-controls" aria-hidden="true"></div>
+                <div class="url-bar" id="return-url">deepclick.local/reflow</div>
+            </header>
+
+            <section class="return-card">
+                <span class="return-chip">Welcome back</span>
+                <h1>Your reward is still here</h1>
+                <p>We saved this Meta click before opening the App Store, so the return visit can continue the campaign flow.</p>
+
+                <div class="coupon">
+                    <div>
+                        <strong>Starter pack unlocked</strong>
+                        <span id="click-id-text">Matched to this visit</span>
+                    </div>
+                    <div class="coupon-code">META12</div>
+                </div>
+
+                <div class="return-actions">
+                    <button class="primary-btn" id="continue-button" type="button">Continue</button>
+                    <button class="ghost-btn" id="reset-button" type="button">Restart</button>
+                </div>
+            </section>
+
+            <section class="offer-list">
+                <div class="offer-row">
+                    <div class="offer-icon">AS</div>
+                    <div>
+                        <strong>Store visit completed</strong>
+                        <span>Return traffic lands on a separate page.</span>
+                    </div>
+                </div>
+
+                <div class="offer-row">
+                    <div class="offer-icon">ID</div>
+                    <div>
+                        <strong>Campaign context active</strong>
+                        <span>The click ID remains available in local storage.</span>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <div id="toast" class="toast" role="status"></div>
+
+    <script>
+        /*
+         * 本 demo 用到的前端 API 和执行顺序：
+         *
+         * 1. DOM API：document.getElementById / addEventListener
+         *    获取按钮、页面容器，并监听点击、返回、页面恢复事件。
+         *
+         * 2. Web Storage API：localStorage
+         *    保存广告点击上下文，模拟 DeepClick 这类链路里的 click_id / campaign 信息。
+         *
+         * 3. URL API：URL / URLSearchParams
+         *    生成同源回流地址，例如 ?view=reflow&utm_source=meta&click_id=xxx。
+         *
+         * 4. History API：history.replaceState
+         *    在跳 App Store 前替换当前历史记录，让浏览器返回时落到回流 URL。
+         *
+         * 5. Location API：window.location.assign
+         *    执行真实外跳，打开 App Store。
+         *
+         * 6. Page Lifecycle API：pageshow
+         *    用户从 App Store 返回当前页面时，根据回流 URL 渲染回流页。
+         */
+        const APP_STORE_URL = 'https://apps.apple.com/us/app/apple-store/id375380948';
+        const STORAGE_KEY = 'deepclick_history_replace_demo';
+
+        const landingPage = document.getElementById('landing-page');
+        const returnPage = document.getElementById('return-page');
+        const playButton = document.getElementById('play-button');
+        const resetButton = document.getElementById('reset-button');
+        const continueButton = document.getElementById('continue-button');
+        const returnUrl = document.getElementById('return-url');
+        const clickIdText = document.getElementById('click-id-text');
+        const toast = document.getElementById('toast');
+
+        // 外跳 App Store 的瞬间 URL 已经被替换成回流地址，
+        // 但用户离开前仍应该看到原落地页，不能提前渲染回流页。
+        let leavingForAppStore = false;
+
+        function createClickId() {
+            return 'dc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+        }
+
+        function getContext() {
+            try {
+                // Web Storage API：读取本地保存的点击上下文。
+                return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function saveContext() {
+            const context = {
+                clickId: createClickId(),
+                source: 'meta',
+                createdAt: new Date().toISOString()
+            };
+
+            // 顺序 1：保存广告点击上下文，返回后仍能恢复 click_id。
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(context));
+            return context;
+        }
+
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            window.clearTimeout(showToast.timer);
+            showToast.timer = window.setTimeout(() => {
+                toast.classList.remove('show');
+            }, 1900);
+        }
+
+        function buildReturnUrl(clickId) {
+            // URL API：基于当前页面构造同源回流地址。
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.hash = '';
+
+            // History API 只能替换同源 URL，所以用当前 HTML 的 query 参数承载回流页状态。
+            url.searchParams.set('view', 'reflow');
+            url.searchParams.set('utm_source', 'meta');
+            url.searchParams.set('click_id', clickId);
+            return url.pathname + url.search;
+        }
+
+        function render(pageName) {
+            const isReturn = pageName === 'reflow';
+            landingPage.classList.toggle('active', !isReturn);
+            returnPage.classList.toggle('active', isReturn);
+
+            if (isReturn) {
+                const context = getContext();
+                const params = new URLSearchParams(window.location.search);
+                const clickId = params.get('click_id') || (context && context.clickId);
+                clickIdText.textContent = clickId ? 'Click ID ' + clickId : 'Matched to this visit';
+                returnUrl.textContent = window.location.host
+                    ? window.location.host + '/reflow'
+                    : 'deepclick.local/reflow';
+            }
+        }
+
+        function pageFromUrl() {
+            // URLSearchParams API：从地址栏 query 判断当前应该展示落地页还是回流页。
+            const params = new URLSearchParams(window.location.search);
+            return params.get('view') === 'reflow' ? 'reflow' : 'landing';
+        }
+
+        function syncPageFromUrl() {
+            // 点击后到真正跳出浏览器前，地址栏已经是回流 URL。
+            // 这里强制保留落地页 DOM，避免用户先看到回流页再去 App Store。
+            if (leavingForAppStore) {
+                render('landing');
+                return;
+            }
+
+            render(pageFromUrl());
+        }
+
+        function openAppStore() {
+            const context = saveContext();
+            const nextUrl = buildReturnUrl(context.clickId);
+
+            // 顺序 2：进入“准备外跳”状态；此时即使 URL 被替换，也暂时不渲染回流页。
+            leavingForAppStore = true;
+
+            // 顺序 3：History API，必须在外跳前替换当前历史记录；
+            // 否则用户从 App Store 返回时仍会回到落地页 URL。
+            history.replaceState({ page: 'reflow', clickId: context.clickId }, '', nextUrl);
+            render('landing');
+
+            // 顺序 4：Location API，跳转到 App Store。
+            window.location.assign(APP_STORE_URL);
+        }
+
+        function resetFlow() {
+            localStorage.removeItem(STORAGE_KEY);
+            const url = new URL(window.location.href);
+            url.search = '';
+            url.hash = '';
+            history.replaceState({ page: 'landing' }, '', url.pathname);
+            render('landing');
+            showToast('已回到落地页');
+        }
+
+        playButton.addEventListener('click', openAppStore);
+        resetButton.addEventListener('click', resetFlow);
+        continueButton.addEventListener('click', () => {
+            showToast('继续当前回流路径');
+        });
+
+        window.addEventListener('popstate', syncPageFromUrl);
+        window.addEventListener('pageshow', () => {
+            // 顺序 5：Page Lifecycle API，从 App Store 返回时触发 pageshow；
+            // 此时才允许按 view=reflow 渲染回流页。
+            leavingForAppStore = false;
+            syncPageFromUrl();
+        });
+
+        // 顺序 0：页面首次加载时，根据当前 URL 初始化展示内容。
+        syncPageFromUrl();
+    </script>
+</body>
+</html>
