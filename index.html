@@ -70,6 +70,12 @@
             font-weight: 800;
         }
 
+        .deploy-stamp {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+        }
+
         .status-icons {
             display: flex;
             gap: 5px;
@@ -540,6 +546,7 @@
     <main class="shell" aria-live="polite">
         <div class="status-bar">
             <span>9:41</span>
+            <span class="deploy-stamp">更新 07-02 16:31</span>
             <span class="status-icons">
                 <i class="signal"></i>
                 <i class="wifi"></i>
@@ -660,7 +667,7 @@
          * 5. Location API：window.location.assign
          *    执行真实外跳，打开 App Store。
          *
-         * 6. Page Lifecycle API：pageshow
+         * 6. Page Lifecycle API：pageshow / visibilitychange / focus
          *    用户从 App Store 返回当前页面时，根据回流 URL 渲染回流页。
          */
         const APP_STORE_URL = 'https://apps.apple.com/us/app/apple-store/id375380948';
@@ -678,6 +685,7 @@
         // 外跳 App Store 的瞬间 URL 已经被替换成回流地址，
         // 但用户离开前仍应该看到原落地页，不能提前渲染回流页。
         let leavingForAppStore = false;
+        let appStoreOpenedAt = 0;
 
         function createClickId() {
             return 'dc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -765,6 +773,7 @@
 
             // 顺序 2：进入“准备外跳”状态；此时即使 URL 被替换，也暂时不渲染回流页。
             leavingForAppStore = true;
+            appStoreOpenedAt = Date.now();
 
             // 顺序 3：History API，必须在外跳前替换当前历史记录；
             // 否则用户从 App Store 返回时仍会回到落地页 URL。
@@ -773,6 +782,22 @@
 
             // 顺序 4：Location API，跳转到 App Store。
             window.location.assign(APP_STORE_URL);
+        }
+
+        function finishAppStoreReturn() {
+            if (!leavingForAppStore) {
+                syncPageFromUrl();
+                return;
+            }
+
+            // iOS 从 App Store 回到浏览器时不一定触发 pageshow；
+            // 用短暂延迟避免用户还没真正离开页面时提前显示回流页。
+            if (Date.now() - appStoreOpenedAt < 1200) {
+                return;
+            }
+
+            leavingForAppStore = false;
+            syncPageFromUrl();
         }
 
         function resetFlow() {
@@ -792,11 +817,12 @@
         });
 
         window.addEventListener('popstate', syncPageFromUrl);
-        window.addEventListener('pageshow', () => {
-            // 顺序 5：Page Lifecycle API，从 App Store 返回时触发 pageshow；
-            // 此时才允许按 view=reflow 渲染回流页。
-            leavingForAppStore = false;
-            syncPageFromUrl();
+        window.addEventListener('pageshow', finishAppStoreReturn);
+        window.addEventListener('focus', finishAppStoreReturn);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                finishAppStoreReturn();
+            }
         });
 
         // 顺序 0：页面首次加载时，根据当前 URL 初始化展示内容。
