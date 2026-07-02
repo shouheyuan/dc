@@ -546,7 +546,7 @@
     <main class="shell" aria-live="polite">
         <div class="status-bar">
             <span>9:41</span>
-            <span class="deploy-stamp">更新 07-02 18:22</span>
+            <span class="deploy-stamp">更新 07-02 19:00</span>
             <span class="status-icons">
                 <i class="signal"></i>
                 <i class="wifi"></i>
@@ -591,7 +591,7 @@
                 </div>
 
                 <div class="action-row">
-                    <button id="play-button" class="primary-btn" type="button">Opening App Store in 3 seconds</button>
+                    <button id="play-button" class="primary-btn" type="button">Get it on the App Store</button>
                 </div>
 
                 <div class="meta-strip">
@@ -671,7 +671,6 @@
          *    用户从 App Store 返回当前页面时，根据回流 URL 渲染回流页。
          */
         const APP_STORE_URL = 'https://apps.apple.com/us/app/apple-store/id375380948';
-        const AUTO_OPEN_DELAY_MS = 3000;
         const STORAGE_KEY = 'deepclick_history_replace_demo';
 
         const landingPage = document.getElementById('landing-page');
@@ -687,7 +686,6 @@
         // 但用户离开前仍应该看到原落地页，不能提前渲染回流页。
         let leavingForAppStore = false;
         let appStoreOpenedAt = 0;
-        let autoOpenTimer = 0;
 
         function createClickId() {
             return 'dc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -770,8 +768,6 @@
         }
 
         function openAppStore() {
-            window.clearTimeout(autoOpenTimer);
-
             const context = saveContext();
             const nextUrl = buildReturnUrl(context.clickId);
 
@@ -786,15 +782,6 @@
 
             // 顺序 4：Location API，跳转到 App Store。
             window.location.assign(APP_STORE_URL);
-        }
-
-        function scheduleAutoOpenAppStore() {
-            if (pageFromUrl() !== 'landing' || leavingForAppStore) {
-                return;
-            }
-
-            window.clearTimeout(autoOpenTimer);
-            autoOpenTimer = window.setTimeout(openAppStore, AUTO_OPEN_DELAY_MS);
         }
 
         function finishAppStoreReturn() {
@@ -820,7 +807,6 @@
             url.hash = '';
             history.replaceState({ page: 'landing' }, '', url.pathname);
             render('landing');
-            scheduleAutoOpenAppStore();
             showToast('已回到落地页');
         }
 
@@ -841,7 +827,6 @@
 
         // 顺序 0：页面首次加载时，根据当前 URL 初始化展示内容。
         syncPageFromUrl();
-        scheduleAutoOpenAppStore();
     </script>
 </body>
 </html>
