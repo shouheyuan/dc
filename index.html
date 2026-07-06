@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0866ff">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icons/pwa-icon-192.png" type="image/png">
     <title>DeepClick 回流落地页</title>
     <style>
         * {
@@ -337,6 +340,59 @@
             background: #e9edf4;
         }
 
+        .primary-btn:disabled,
+        .ghost-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.62;
+        }
+
+        .install-btn.is-ready {
+            color: #fff;
+            background: var(--green);
+        }
+
+        .pwa-panel {
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            display: grid;
+            gap: 12px;
+            background: var(--paper);
+        }
+
+        .pwa-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .pwa-panel-head strong {
+            font-size: 14px;
+        }
+
+        .pwa-summary {
+            min-height: 24px;
+            padding: 5px 8px;
+            border-radius: 12px;
+            color: #075985;
+            background: #e0f2fe;
+            font-size: 11px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .pwa-report {
+            margin: 0;
+            max-height: 154px;
+            overflow: auto;
+            color: #3f4a5c;
+            font-size: 12px;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
         .meta-strip {
             display: flex;
             align-items: center;
@@ -591,8 +647,17 @@
                 </div>
 
                 <div class="action-row">
+                    <button id="install-pwa-button" class="ghost-btn install-btn" type="button" disabled>等待安装能力</button>
                     <button id="play-button" class="primary-btn" type="button">Get it on the App Store</button>
                 </div>
+
+                <section class="pwa-panel" aria-label="PWA 诊断">
+                    <div class="pwa-panel-head">
+                        <strong>PWA 安装诊断</strong>
+                        <span id="pwa-summary" class="pwa-summary">检测中</span>
+                    </div>
+                    <pre id="pwa-report" class="pwa-report">检测中</pre>
+                </section>
 
                 <div class="meta-strip">
                     <span>Sponsored placement</span>
@@ -675,17 +740,31 @@
 
         const landingPage = document.getElementById('landing-page');
         const returnPage = document.getElementById('return-page');
+        const installPwaButton = document.getElementById('install-pwa-button');
         const playButton = document.getElementById('play-button');
         const resetButton = document.getElementById('reset-button');
         const continueButton = document.getElementById('continue-button');
         const returnUrl = document.getElementById('return-url');
         const clickIdText = document.getElementById('click-id-text');
         const toast = document.getElementById('toast');
+        const pwaSummary = document.getElementById('pwa-summary');
+        const pwaReport = document.getElementById('pwa-report');
 
         // 外跳 App Store 的瞬间 URL 已经被替换成回流地址，
         // 但用户离开前仍应该看到原落地页，不能提前渲染回流页。
         let leavingForAppStore = false;
         let appStoreOpenedAt = 0;
+        let deferredInstallPrompt = null;
+        let installPromptSeen = false;
+        const pwaDiagnostics = {
+            mode: '检测中',
+            secure: '检测中',
+            manifest: '检测中',
+            serviceWorker: '检测中',
+            storage: '检测中',
+            installPrompt: '等待 beforeinstallprompt',
+            userAgent: navigator.userAgent
+        };
 
         function createClickId() {
             return 'dc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -719,6 +798,148 @@
             showToast.timer = window.setTimeout(() => {
                 toast.classList.remove('show');
             }, 1900);
+        }
+
+        function detectBrowserMode() {
+            const ua = navigator.userAgent;
+            const isAndroid = /Android/i.test(ua);
+            const isWebView = isAndroid && (/\bwv\b/i.test(ua) || /Version\/\d+\.\d+.*Chrome/i.test(ua));
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+            if (isStandalone) {
+                return 'PWA 独立窗口';
+            }
+
+            if (isWebView) {
+                return 'Android WebView';
+            }
+
+            if (isAndroid && /Chrome/i.test(ua)) {
+                return 'Android Chrome';
+            }
+
+            return '普通浏览器';
+        }
+
+        function renderPwaDiagnostics(summary) {
+            if (summary) {
+                pwaSummary.textContent = summary;
+            }
+
+            pwaReport.textContent = [
+                '容器：' + pwaDiagnostics.mode,
+                'HTTPS：' + pwaDiagnostics.secure,
+                'Manifest：' + pwaDiagnostics.manifest,
+                'Service Worker：' + pwaDiagnostics.serviceWorker,
+                '本地存储：' + pwaDiagnostics.storage,
+                '安装事件：' + pwaDiagnostics.installPrompt,
+                'UA：' + pwaDiagnostics.userAgent
+            ].join('\n');
+        }
+
+        function testStorage() {
+            try {
+                localStorage.setItem('deepclick_pwa_probe', '1');
+                localStorage.removeItem('deepclick_pwa_probe');
+                pwaDiagnostics.storage = '通过，localStorage 可写';
+            } catch (error) {
+                pwaDiagnostics.storage = '失败，' + error.message;
+            }
+            renderPwaDiagnostics();
+        }
+
+        async function testManifest() {
+            try {
+                const response = await fetch('/manifest.webmanifest', { cache: 'no-store' });
+                if (!response.ok) {
+                    pwaDiagnostics.manifest = '失败，HTTP ' + response.status;
+                    renderPwaDiagnostics();
+                    return;
+                }
+
+                const manifest = await response.json();
+                const hasRequiredFields = manifest.name
+                    && manifest.start_url
+                    && manifest.display
+                    && Array.isArray(manifest.icons)
+                    && manifest.icons.length >= 2;
+
+                if (hasRequiredFields) {
+                    pwaDiagnostics.manifest = '通过，' + manifest.name + ' / ' + manifest.display;
+                } else {
+                    pwaDiagnostics.manifest = '失败，字段不完整';
+                }
+            } catch (error) {
+                pwaDiagnostics.manifest = '失败，' + error.message;
+            }
+            renderPwaDiagnostics();
+        }
+
+        async function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                pwaDiagnostics.serviceWorker = '失败，当前容器不支持';
+                renderPwaDiagnostics();
+                return;
+            }
+
+            try {
+                const registration = await navigator.serviceWorker.register('/dc-sw.js', { scope: '/' });
+                await navigator.serviceWorker.ready;
+
+                if (navigator.serviceWorker.controller) {
+                    pwaDiagnostics.serviceWorker = '通过，已注册并接管当前页';
+                } else {
+                    pwaDiagnostics.serviceWorker = '观察，已注册，首次打开可能需刷新后接管';
+                }
+
+                registration.update();
+            } catch (error) {
+                pwaDiagnostics.serviceWorker = '失败，' + error.message;
+            }
+            renderPwaDiagnostics();
+        }
+
+        function updateInstallButton() {
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+            installPwaButton.classList.toggle('is-ready', Boolean(deferredInstallPrompt));
+
+            if (isStandalone) {
+                installPwaButton.disabled = true;
+                installPwaButton.textContent = '已在 PWA 模式运行';
+                pwaDiagnostics.installPrompt = '通过，当前已是独立窗口';
+                renderPwaDiagnostics('已安装');
+                return;
+            }
+
+            if (deferredInstallPrompt) {
+                installPwaButton.disabled = false;
+                installPwaButton.textContent = '安装到主屏幕';
+                pwaDiagnostics.installPrompt = '通过，浏览器已开放安装提示';
+                renderPwaDiagnostics('可安装');
+                return;
+            }
+
+            installPwaButton.disabled = true;
+            installPwaButton.textContent = '等待安装能力';
+            renderPwaDiagnostics();
+        }
+
+        function initPwaDiagnostics() {
+            const mode = detectBrowserMode();
+            const secure = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
+
+            pwaDiagnostics.mode = mode;
+            pwaDiagnostics.secure = secure ? '通过，' + location.origin : '失败，非安全上下文';
+            testStorage();
+            testManifest();
+            updateInstallButton();
+
+            window.setTimeout(() => {
+                if (!installPromptSeen && !deferredInstallPrompt) {
+                    pwaDiagnostics.installPrompt = '观察，尚未收到 beforeinstallprompt；Android WebView 内常见';
+                    renderPwaDiagnostics('需实机判断');
+                }
+            }, 3500);
         }
 
         function buildReturnUrl(clickId) {
@@ -767,6 +988,29 @@
             render(pageFromUrl());
         }
 
+        async function installPwa() {
+            if (!deferredInstallPrompt) {
+                showToast('当前容器还没有开放 PWA 安装提示');
+                return;
+            }
+
+            const promptEvent = deferredInstallPrompt;
+            deferredInstallPrompt = null;
+            updateInstallButton();
+            promptEvent.prompt();
+
+            const choice = await promptEvent.userChoice;
+            if (choice.outcome === 'accepted') {
+                showToast('已确认安装');
+                pwaDiagnostics.installPrompt = '通过，用户已确认安装';
+                renderPwaDiagnostics('已确认');
+            } else {
+                showToast('已取消安装');
+                pwaDiagnostics.installPrompt = '观察，用户取消了安装';
+                renderPwaDiagnostics('已取消');
+            }
+        }
+
         function openAppStore() {
             const context = saveContext();
             const nextUrl = buildReturnUrl(context.clickId);
@@ -811,6 +1055,7 @@
         }
 
         playButton.addEventListener('click', openAppStore);
+        installPwaButton.addEventListener('click', installPwa);
         resetButton.addEventListener('click', resetFlow);
         continueButton.addEventListener('click', () => {
             showToast('继续当前回流路径');
@@ -825,7 +1070,24 @@
             }
         });
 
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            installPromptSeen = true;
+            deferredInstallPrompt = event;
+            updateInstallButton();
+            showToast('可以安装到主屏幕');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            updateInstallButton();
+            showToast('PWA 已安装');
+        });
+
+        window.addEventListener('load', registerServiceWorker);
+
         // 顺序 0：页面首次加载时，根据当前 URL 初始化展示内容。
+        initPwaDiagnostics();
         syncPageFromUrl();
     </script>
 </body>
